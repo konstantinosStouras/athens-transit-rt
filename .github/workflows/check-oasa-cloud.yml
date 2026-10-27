@@ -1,0 +1,39 @@
+name: Check OASA cloud access
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  connectivity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check the OASA metadata endpoint
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request
+          endpoints = [
+              ("lines", "https://telematics.oasa.gr/api/?act=webGetLines"),
+          ]
+          results = []
+          for label, url in endpoints:
+              try:
+                  req = urllib.request.Request(url, headers={"User-Agent": "athens-transit-rt/1.0"})
+                  with urllib.request.urlopen(req, timeout=20) as response:
+                      data = json.load(response)
+                      ok = isinstance(data, list) and (label != "lines" or len(data) > 0)
+                      results.append((label, ok, f"HTTP {response.status}, JSON {type(data).__name__}"))
+              except Exception as exc:
+                  results.append((label, False, str(exc)))
+          import os
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("## OASA access from a GitHub cloud runner\n\n")
+              for label, ok, detail in results:
+                  line = f"{label}: {'PASS' if ok else 'FAIL'} — {detail}"
+                  print(line)
+                  summary.write(f"- {line}\n")
+              summary.write("\nThis tests GitHub's network only; Google Cloud needs a separate test before deployment.\n")
+          if not all(ok for _, ok, _ in results):
+              raise SystemExit(1)
+          PY
